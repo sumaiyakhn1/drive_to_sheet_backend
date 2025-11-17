@@ -12,7 +12,7 @@ CLIENT_ID = os.getenv("OAUTH_CLIENT_ID")
 CLIENT_SECRET = os.getenv("OAUTH_CLIENT_SECRET")
 FERNET_KEY = os.getenv("FERNET_KEY")
 ADMIN_KEY = os.getenv("ADMIN_KEY")
-REFRESH_TOKEN_ENV = os.getenv("REFRESH_TOKEN")  # encrypted token
+REFRESH_TOKEN_ENV = os.getenv("REFRESH_TOKEN")
 
 cipher = Fernet(FERNET_KEY.encode())
 
@@ -30,7 +30,7 @@ app.add_middleware(
 )
 
 # -------------------------------
-# EXTRACT ID FROM URL AUTOMATICALLY
+# EXTRACT ID FROM URL
 # -------------------------------
 def extract_id(url_or_id: str):
     if "/" not in url_or_id:
@@ -43,7 +43,6 @@ def extract_id(url_or_id: str):
         if "d" in parts:
             return parts[parts.index("d") + 1]
 
-    # otherwise return raw
     return url_or_id
 
 
@@ -52,7 +51,7 @@ def extract_id(url_or_id: str):
 # -------------------------------
 def get_creds():
     if not REFRESH_TOKEN_ENV:
-        raise Exception("REFRESH_TOKEN is missing in Render Environment Variables!")
+        raise Exception("REFRESH_TOKEN missing in Render ENV!")
 
     refresh_token = cipher.decrypt(REFRESH_TOKEN_ENV.encode()).decode()
 
@@ -116,7 +115,6 @@ def sync_drive_to_sheet(folder_id: str = Form(...), sheet_id: str = Form(...)):
 
     files = results.get("files", [])
 
-    # Create Drive URLs
     rows = []
     for f in files:
         file_id = f["id"]
@@ -124,7 +122,6 @@ def sync_drive_to_sheet(folder_id: str = Form(...), sheet_id: str = Form(...)):
         link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
         rows.append([name, link])
 
-    # Upload to Sheets
     sheet.spreadsheets().values().update(
         spreadsheetId=sheet_id,
         range="Sheet1!A2",
@@ -137,3 +134,11 @@ def sync_drive_to_sheet(folder_id: str = Form(...), sheet_id: str = Form(...)):
         "count": len(rows),
         "message": "Drive folder synced successfully!"
     }
+
+
+# -------------------------------
+# RENDER START ENTRYPOINT
+# -------------------------------
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
