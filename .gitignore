@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# Env files
+.env
+
+# Token files
+refresh_token.enc
+token.json
+
+# Virtual environment
+venv/
+.env/
