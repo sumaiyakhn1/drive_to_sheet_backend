@@ -118,7 +118,10 @@ def sync_drive_to_sheet(folder_id: str = Form(...), sheet_id: str = Form(...)):
     rows = []
     for f in files:
         file_id = f["id"]
-        name = f["name"]
+
+        # ✅ Only keep part before the underscore
+        name = f["name"].split("_")[0]
+
         link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
         rows.append([name, link])
 
