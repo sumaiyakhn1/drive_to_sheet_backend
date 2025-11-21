@@ -95,6 +95,29 @@ def admin_set_token(refresh_token: str = Form(...), admin_key: str = Form(...)):
 
 
 # -------------------------------
+# LIST ALL FILES (NO 100 LIMIT)
+# -------------------------------
+def list_all_files(drive, folder_id: str):
+    files = []
+    page_token = None
+
+    while True:
+        response = drive.files().list(
+            q=f"'{folder_id}' in parents",
+            fields="nextPageToken, files(id, name)",
+            pageSize=1000   # max allowed
+        ).execute()
+
+        files.extend(response.get("files", []))
+        page_token = response.get("nextPageToken")
+
+        if not page_token:
+            break
+
+    return files
+
+
+# -------------------------------
 # SYNC GOOGLE DRIVE → GOOGLE SHEET
 # -------------------------------
 @app.post("/sync")
@@ -107,19 +130,14 @@ def sync_drive_to_sheet(folder_id: str = Form(...), sheet_id: str = Form(...)):
     drive = build("drive", "v3", credentials=creds)
     sheet = build("sheets", "v4", credentials=creds)
 
-    # List files in Drive folder
-    results = drive.files().list(
-        q=f"'{folder_id}' in parents",
-        fields="files(id, name)"
-    ).execute()
-
-    files = results.get("files", [])
+    # 🔥 Get ALL files (no 100-file limit)
+    files = list_all_files(drive, folder_id)
 
     rows = []
     for f in files:
         file_id = f["id"]
 
-        # ✅ Only keep part before the underscore
+        # Only part before underscore
         name = f["name"].split("_")[0]
 
         link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
