@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from cryptography.fernet import Fernet
+from urllib.parse import urlparse, parse_qs
 
 # -------------------------------
 # LOAD ENVIRONMENT VARIABLES
@@ -44,6 +45,63 @@ def extract_id(url_or_id: str):
             return parts[parts.index("d") + 1]
 
     return url_or_id
+
+
+# -------------------------------
+# EXTRACT SHEET INFO (ID + gid)
+# -------------------------------
+def extract_sheet_info(sheet_url_or_id: str):
+    """
+    Accept:
+      - spreadsheetId
+      - spreadsheet URL
+      - spreadsheet tab URL (#gid=xxx)
+      - spreadsheet tab URL (?gid=xxx)
+    Return:
+      (spreadsheetId, gid or None)
+    """
+
+    # If only ID (no URL)
+    if "http" not in sheet_url_or_id:
+        return sheet_url_or_id, None
+
+    parsed = urlparse(sheet_url_or_id)
+    path_parts = parsed.path.split("/")
+
+    # Extract spreadsheet ID from URL
+    spreadsheet_id = None
+    if "d" in path_parts:
+        spreadsheet_id = path_parts[path_parts.index("d") + 1]
+    else:
+        raise Exception("Invalid Google Sheet URL")
+
+    # Extract gid from ?gid=xxx
+    query_params = parse_qs(parsed.query)
+    gid = None
+    if "gid" in query_params:
+        gid = query_params["gid"][0]
+
+    # Extract gid from #gid=xxx
+    if parsed.fragment.startswith("gid="):
+        gid = parsed.fragment.replace("gid=", "")
+
+    return spreadsheet_id, gid
+
+
+# -------------------------------
+# GET TAB NAME USING gid
+# -------------------------------
+def get_tab_name_from_gid(sheet_service, spreadsheet_id: str, gid: str):
+    metadata = sheet_service.spreadsheets().get(
+        spreadsheetId=spreadsheet_id
+    ).execute()
+
+    for sheet in metadata.get("sheets", []):
+        props = sheet.get("properties", {})
+        if str(props.get("sheetId")) == str(gid):
+            return props.get("title")
+
+    raise Exception(f"No tab found for gid={gid}")
 
 
 # -------------------------------
@@ -123,29 +181,33 @@ def list_all_files(drive, folder_id: str):
 @app.post("/sync")
 def sync_drive_to_sheet(folder_id: str = Form(...), sheet_id: str = Form(...)):
     folder_id = extract_id(folder_id)
-    sheet_id = extract_id(sheet_id)
 
     creds = get_creds()
-
     drive = build("drive", "v3", credentials=creds)
-    sheet = build("sheets", "v4", credentials=creds)
+    sheet_service = build("sheets", "v4", credentials=creds)
 
-    # 🔥 Get ALL files (no 100-file limit)
+    # Support full sheet URLs + gid
+    spreadsheet_id, gid = extract_sheet_info(sheet_id)
+
+    # Resolve correct tab
+    if gid:
+        tab_name = get_tab_name_from_gid(sheet_service, spreadsheet_id, gid)
+    else:
+        tab_name = "Sheet1"
+
+    # Get all files from Drive folder
     files = list_all_files(drive, folder_id)
 
     rows = []
     for f in files:
         file_id = f["id"]
-
-        # Only part before underscore
-        name = f["name"].split("_")[0]
-
+        name = f["name"].split("_")[0]  # Your original logic
         link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
         rows.append([name, link])
 
-    sheet.spreadsheets().values().update(
-        spreadsheetId=sheet_id,
-        range="Sheet1!A2",
+    sheet_service.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id,
+        range=f"{tab_name}!A2",
         valueInputOption="RAW",
         body={"values": rows}
     ).execute()
