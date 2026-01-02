@@ -61,27 +61,23 @@ def extract_sheet_info(sheet_url_or_id: str):
       (spreadsheetId, gid or None)
     """
 
-    # If only ID (no URL)
     if "http" not in sheet_url_or_id:
         return sheet_url_or_id, None
 
     parsed = urlparse(sheet_url_or_id)
     path_parts = parsed.path.split("/")
 
-    # Extract spreadsheet ID from URL
     spreadsheet_id = None
     if "d" in path_parts:
         spreadsheet_id = path_parts[path_parts.index("d") + 1]
     else:
         raise Exception("Invalid Google Sheet URL")
 
-    # Extract gid from ?gid=xxx
     query_params = parse_qs(parsed.query)
     gid = None
     if "gid" in query_params:
         gid = query_params["gid"][0]
 
-    # Extract gid from #gid=xxx
     if parsed.fragment.startswith("gid="):
         gid = parsed.fragment.replace("gid=", "")
 
@@ -163,7 +159,7 @@ def list_all_files(drive, folder_id: str):
         response = drive.files().list(
             q=f"'{folder_id}' in parents",
             fields="nextPageToken, files(id, name)",
-            pageSize=1000   # max allowed
+            pageSize=1000
         ).execute()
 
         files.extend(response.get("files", []))
@@ -186,22 +182,19 @@ def sync_drive_to_sheet(folder_id: str = Form(...), sheet_id: str = Form(...)):
     drive = build("drive", "v3", credentials=creds)
     sheet_service = build("sheets", "v4", credentials=creds)
 
-    # Support full sheet URLs + gid
     spreadsheet_id, gid = extract_sheet_info(sheet_id)
 
-    # Resolve correct tab
     if gid:
         tab_name = get_tab_name_from_gid(sheet_service, spreadsheet_id, gid)
     else:
         tab_name = "Sheet1"
 
-    # Get all files from Drive folder
     files = list_all_files(drive, folder_id)
 
     rows = []
     for f in files:
         file_id = f["id"]
-        name = f["name"].split("_")[0]  # Your original logic
+        name = f["name"]  # ✅ FULL NAME (NO SPLIT)
         link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
         rows.append([name, link])
 
