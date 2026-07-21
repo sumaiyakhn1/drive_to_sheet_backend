@@ -1,5 +1,8 @@
 import os
+import io
+import openpyxl
 from fastapi import FastAPI, Form
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -172,44 +175,45 @@ def list_all_files(drive, folder_id: str):
 
 
 # -------------------------------
-# SYNC GOOGLE DRIVE → GOOGLE SHEET
+# GENERATE EXCEL FROM GOOGLE DRIVE
 # -------------------------------
-@app.post("/sync")
-def sync_drive_to_sheet(folder_id: str = Form(...), sheet_id: str = Form(...)):
+@app.post("/generate-excel")
+def generate_excel_from_drive(folder_id: str = Form(...)):
     folder_id = extract_id(folder_id)
 
     creds = get_creds()
     drive = build("drive", "v3", credentials=creds)
-    sheet_service = build("sheets", "v4", credentials=creds)
-
-    spreadsheet_id, gid = extract_sheet_info(sheet_id)
-
-    if gid:
-        tab_name = get_tab_name_from_gid(sheet_service, spreadsheet_id, gid)
-    else:
-        tab_name = "Sheet1"
 
     files = list_all_files(drive, folder_id)
 
-    rows = []
+    # Create Excel workbook in memory
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Drive Files"
+    
+    # Headers
+    ws.append(["File Name", "File Link"])
+
     for f in files:
         file_id = f["id"]
-        name = f["name"]  # ✅ FULL NAME (NO SPLIT)
+        name = f["name"]
         link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
-        rows.append([name, link])
+        ws.append([name, link])
 
-    sheet_service.spreadsheets().values().update(
-        spreadsheetId=spreadsheet_id,
-        range=f"{tab_name}!A2",
-        valueInputOption="RAW",
-        body={"values": rows}
-    ).execute()
+    # Save to BytesIO
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
 
-    return {
-        "ok": True,
-        "count": len(rows),
-        "message": "Drive folder synced successfully!"
+    # Return as StreamingResponse
+    headers = {
+        'Content-Disposition': 'attachment; filename="drive_files.xlsx"'
     }
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers
+    )
 
 
 # -------------------------------
