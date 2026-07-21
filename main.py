@@ -1,24 +1,15 @@
 import os
 import io
 import openpyxl
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from cryptography.fernet import Fernet
-from urllib.parse import urlparse, parse_qs
 
 # -------------------------------
 # LOAD ENVIRONMENT VARIABLES
 # -------------------------------
-CLIENT_ID = os.getenv("OAUTH_CLIENT_ID")
-CLIENT_SECRET = os.getenv("OAUTH_CLIENT_SECRET")
-FERNET_KEY = os.getenv("FERNET_KEY")
-ADMIN_KEY = os.getenv("ADMIN_KEY")
-REFRESH_TOKEN_ENV = os.getenv("REFRESH_TOKEN")
-
-cipher = Fernet(FERNET_KEY.encode())
+API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # -------------------------------
 # FASTAPI APP
@@ -51,104 +42,11 @@ def extract_id(url_or_id: str):
 
 
 # -------------------------------
-# EXTRACT SHEET INFO (ID + gid)
-# -------------------------------
-def extract_sheet_info(sheet_url_or_id: str):
-    """
-    Accept:
-      - spreadsheetId
-      - spreadsheet URL
-      - spreadsheet tab URL (#gid=xxx)
-      - spreadsheet tab URL (?gid=xxx)
-    Return:
-      (spreadsheetId, gid or None)
-    """
-
-    if "http" not in sheet_url_or_id:
-        return sheet_url_or_id, None
-
-    parsed = urlparse(sheet_url_or_id)
-    path_parts = parsed.path.split("/")
-
-    spreadsheet_id = None
-    if "d" in path_parts:
-        spreadsheet_id = path_parts[path_parts.index("d") + 1]
-    else:
-        raise Exception("Invalid Google Sheet URL")
-
-    query_params = parse_qs(parsed.query)
-    gid = None
-    if "gid" in query_params:
-        gid = query_params["gid"][0]
-
-    if parsed.fragment.startswith("gid="):
-        gid = parsed.fragment.replace("gid=", "")
-
-    return spreadsheet_id, gid
-
-
-# -------------------------------
-# GET TAB NAME USING gid
-# -------------------------------
-def get_tab_name_from_gid(sheet_service, spreadsheet_id: str, gid: str):
-    metadata = sheet_service.spreadsheets().get(
-        spreadsheetId=spreadsheet_id
-    ).execute()
-
-    for sheet in metadata.get("sheets", []):
-        props = sheet.get("properties", {})
-        if str(props.get("sheetId")) == str(gid):
-            return props.get("title")
-
-    raise Exception(f"No tab found for gid={gid}")
-
-
-# -------------------------------
-# GET GOOGLE API CREDS
-# -------------------------------
-def get_creds():
-    if not REFRESH_TOKEN_ENV:
-        raise Exception("REFRESH_TOKEN missing in Render ENV!")
-
-    refresh_token = cipher.decrypt(REFRESH_TOKEN_ENV.encode()).decode()
-
-    creds = Credentials(
-        token=None,
-        refresh_token=refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        scopes=[
-            "https://www.googleapis.com/auth/drive.readonly",
-            "https://www.googleapis.com/auth/spreadsheets",
-        ],
-    )
-    return creds
-
-
-# -------------------------------
 # HOME
 # -------------------------------
 @app.get("/")
 def home():
-    return {"ok": True, "message": "Backend running on Render!"}
-
-
-# -------------------------------
-# ADMIN TOKEN SETTER
-# -------------------------------
-@app.post("/admin/set-token")
-def admin_set_token(refresh_token: str = Form(...), admin_key: str = Form(...)):
-    if admin_key != ADMIN_KEY:
-        return {"ok": False, "error": "Invalid admin key"}
-
-    encrypted = cipher.encrypt(refresh_token.encode()).decode()
-
-    return {
-        "ok": True,
-        "message": "Copy this encrypted token into Render ENV as REFRESH_TOKEN",
-        "encrypted_token": encrypted
-    }
+    return {"ok": True, "message": "Backend running on Render! API Key Mode active."}
 
 
 # -------------------------------
@@ -179,12 +77,16 @@ def list_all_files(drive, folder_id: str):
 # -------------------------------
 @app.post("/generate-excel")
 def generate_excel_from_drive(folder_id: str = Form(...)):
+    if not API_KEY:
+        raise HTTPException(status_code=500, detail="GOOGLE_API_KEY is not set on the server")
+
     folder_id = extract_id(folder_id)
 
-    creds = get_creds()
-    drive = build("drive", "v3", credentials=creds)
-
-    files = list_all_files(drive, folder_id)
+    try:
+        drive = build("drive", "v3", developerKey=API_KEY)
+        files = list_all_files(drive, folder_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to fetch from Google Drive: {str(e)}")
 
     # Create Excel workbook in memory
     wb = openpyxl.Workbook()
