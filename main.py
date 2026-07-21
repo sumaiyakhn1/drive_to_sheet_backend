@@ -1,22 +1,12 @@
 import os
 import io
-import logging
+import re
+import requests
 import openpyxl
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from googleapiclient.discovery import build
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# -------------------------------
-# LOAD ENVIRONMENT VARIABLES
-# -------------------------------
-API_KEY = os.getenv("GOOGLE_API_KEY")
-
-# Log on startup so Render logs show status
-logger.info(f"🔑 GOOGLE_API_KEY loaded: {'YES' if API_KEY else 'NO - MISSING!'}")
+from openpyxl.styles import Font, PatternFill
 
 # -------------------------------
 # FASTAPI APP
@@ -31,12 +21,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # -------------------------------
 # EXTRACT ID FROM URL
 # -------------------------------
 def extract_id(url_or_id: str):
     url_or_id = url_or_id.strip()
-    # Strip query params (e.g. ?usp=sharing)
     url_or_id = url_or_id.split("?")[0]
 
     if "/" not in url_or_id:
@@ -61,34 +51,50 @@ def extract_id(url_or_id: str):
 def home():
     return {
         "ok": True,
-        "message": "Backend running on Render! API Key Mode active.",
-        "api_key_set": bool(API_KEY)
+        "message": "Backend running on Render! API Key NOT required. Web scraping mode active."
     }
 
 
 # -------------------------------
-# LIST ALL FILES (NO 100 LIMIT)
+# FETCH PUBLIC FOLDER FILES
 # -------------------------------
-def list_all_files(drive, folder_id: str):
+def get_public_folder_files(folder_id: str) -> list:
+    url = f"https://drive.google.com/drive/folders/{folder_id}"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    }
+
+    resp = requests.get(url, headers=headers, timeout=30)
+    if resp.status_code != 200:
+        raise Exception(f"Failed to load Drive folder page (HTTP {resp.status_code}). Make sure the folder is 'Anyone with the link can view'.")
+
+    html = resp.text
     files = []
-    page_token = None
 
-    while True:
-        response = drive.files().list(
-            q=f"'{folder_id}' in parents",
-            fields="nextPageToken, files(id, name)",
-            pageSize=1000,
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-        ).execute()
+    pattern1 = re.findall(r'\["([^"\\]+)"(?:,null)+,"([a-zA-Z0-9_-]{20,})"', html)
+    for name, file_id in pattern1:
+        files.append({"name": name, "id": file_id})
 
-        files.extend(response.get("files", []))
-        page_token = response.get("nextPageToken")
+    if not files:
+        pattern2 = re.findall(r'"([a-zA-Z0-9_-]{20,})","([^"]{2,})"', html)
+        seen = set()
+        for file_id, name in pattern2:
+            if file_id not in seen and len(name) < 200:
+                files.append({"name": name, "id": file_id})
+                seen.add(file_id)
 
-        if not page_token:
-            break
+    seen_ids = set()
+    unique_files = []
+    for f in files:
+        if f["id"] not in seen_ids:
+            unique_files.append(f)
+            seen_ids.add(f["id"])
 
-    return files
+    return unique_files
 
 
 # -------------------------------
@@ -97,16 +103,11 @@ def list_all_files(drive, folder_id: str):
 @app.post("/generate-excel")
 def generate_excel_from_drive(folder_id: str = Form(...)):
     try:
-        if not API_KEY:
-            raise HTTPException(status_code=500, detail="GOOGLE_API_KEY is not set on the server")
-
         folder_id_clean = extract_id(folder_id)
-        logger.info(f"📂 Extracted folder ID: {folder_id_clean} from input: {folder_id}")
+        files = get_public_folder_files(folder_id_clean)
 
-        drive = build("drive", "v3", developerKey=API_KEY)
-        files = list_all_files(drive, folder_id_clean)
-
-        logger.info(f"✅ Found {len(files)} files")
+        if not files:
+            raise HTTPException(status_code=404, detail="No files found. Ensure the folder is not empty and shared as 'Anyone with the link can view'.")
 
         # Create Excel workbook in memory
         wb = openpyxl.Workbook()
@@ -115,12 +116,19 @@ def generate_excel_from_drive(folder_id: str = Form(...)):
 
         # Headers
         ws.append(["File Name", "File Link"])
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill("solid", fgColor="1155CC")
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
 
         for f in files:
-            file_id = f["id"]
             name = f["name"]
-            link = f"https://drive.google.com/file/d/{file_id}/view?usp=sharing"
+            link = f"https://drive.google.com/file/d/{f['id']}/view?usp=sharing"
             ws.append([name, link])
+
+        ws.column_dimensions["A"].width = 60
+        ws.column_dimensions["B"].width = 80
 
         # Save to BytesIO
         stream = io.BytesIO()
@@ -140,7 +148,6 @@ def generate_excel_from_drive(folder_id: str = Form(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Unhandled error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
