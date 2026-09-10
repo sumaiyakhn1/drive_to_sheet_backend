@@ -199,7 +199,7 @@ def generate_excel_from_drive(folder_id: str = Form(...)):
 
         for f in files:
             name = f["name"]
-            link = f"https://drive.google.com/file/d/{f['id']}/view?usp=sharing"
+            link = f"https://drive.google.com/thumbnail?id={f['id']}"
             ws.append([name, link])
 
         ws.column_dimensions["A"].width = 60
