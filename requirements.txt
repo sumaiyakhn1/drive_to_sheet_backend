@@ -2,6 +2,10 @@ fastapi
 uvicorn[standard]
 gunicorn
 python-multipart
+fastapi
+uvicorn[standard]
+gunicorn
+python-multipart
 cryptography
 google-api-python-client
 google-auth
@@ -10,3 +14,5 @@ google-auth-httplib2
 python-dotenv
 requests
 openpyxl
+pymongo
+dnspython

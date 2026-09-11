@@ -4,10 +4,120 @@ import re
 import json
 import requests
 import openpyxl
+from datetime import datetime
 from fastapi import FastAPI, Form, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openpyxl.styles import Font, PatternFill
+# pyrefly: ignore [missing-import]
+from pymongo import MongoClient, ReturnDocument
+
+# -------------------------------
+# MONGO & COUNTER STORAGE
+# -------------------------------
+MONGODB_URI = os.getenv(
+    "MONGODB_URI",
+    "mongodb+srv://sumaiyakn28_db_user:LxzSa6R77BOolLjt@cluster0.90gky9n.mongodb.net/drive_to_sheet?retryWrites=true&w=majority&appName=Cluster0"
+)
+COUNTER_FILE = os.path.join(os.path.dirname(__file__), "counter.json")
+
+_mongo_client = None
+
+
+def get_mongo_client():
+    global _mongo_client
+    if _mongo_client is None:
+        try:
+            _mongo_client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=4000)
+        except Exception as e:
+            print(f"[Counter] Failed to initialize MongoClient: {e}")
+            _mongo_client = None
+    return _mongo_client
+
+
+def get_mongo_collection():
+    client = get_mongo_client()
+    if client is not None:
+        try:
+            client.admin.command('ping')
+            db = client["drive_to_sheet"]
+            return db["stats"]
+        except Exception as e:
+            print(f"[Counter] MongoDB fallback to local file: {e}")
+    return None
+
+
+def read_local_counter():
+    if os.path.exists(COUNTER_FILE):
+        try:
+            with open(COUNTER_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"total_generations": 0, "total_files_processed": 0, "last_generated_at": None}
+
+
+def write_local_counter(data):
+    try:
+        with open(COUNTER_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"[Counter] Failed to write local counter file: {e}")
+
+
+def get_generation_stats():
+    coll = get_mongo_collection()
+    if coll is not None:
+        try:
+            doc = coll.find_one({"_id": "excel_counter"})
+            if not doc:
+                doc = {"_id": "excel_counter", "total_generations": 0, "total_files_processed": 0, "last_generated_at": None}
+                coll.insert_one(doc)
+            return {
+                "total_generations": doc.get("total_generations", 0),
+                "total_files_processed": doc.get("total_files_processed", 0),
+                "last_generated_at": doc.get("last_generated_at")
+            }
+        except Exception as e:
+            print(f"[Counter] Error fetching from MongoDB: {e}")
+    return read_local_counter()
+
+
+def increment_generation_stats(files_count: int = 0):
+    now_str = datetime.utcnow().isoformat()
+    coll = get_mongo_collection()
+    new_stats = None
+    if coll is not None:
+        try:
+            res = coll.find_one_and_update(
+                {"_id": "excel_counter"},
+                {
+                    "$inc": {"total_generations": 1, "total_files_processed": files_count},
+                    "$set": {"last_generated_at": now_str}
+                },
+                upsert=True,
+                return_document=ReturnDocument.AFTER
+            )
+            if res:
+                new_stats = {
+                    "total_generations": res.get("total_generations", 0),
+                    "total_files_processed": res.get("total_files_processed", 0),
+                    "last_generated_at": res.get("last_generated_at")
+                }
+        except Exception as e:
+            print(f"[Counter] Error updating MongoDB counter: {e}")
+    
+    local_data = read_local_counter()
+    if new_stats:
+        local_data.update(new_stats)
+    else:
+        local_data["total_generations"] = local_data.get("total_generations", 0) + 1
+        local_data["total_files_processed"] = local_data.get("total_files_processed", 0) + files_count
+        local_data["last_generated_at"] = now_str
+    
+    write_local_counter(local_data)
+    return local_data
+
 
 # -------------------------------
 # FASTAPI APP
@@ -20,6 +130,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "X-Total-Generations"],
 )
 
 
@@ -44,7 +155,7 @@ def extract_id(url_or_id: str):
 
 
 # -------------------------------
-# HOME
+# HOME & STATS
 # -------------------------------
 @app.get("/")
 def home():
@@ -52,6 +163,11 @@ def home():
         "ok": True,
         "message": "Backend running on Render! API Key NOT required. Web scraping mode active."
     }
+
+
+@app.get("/stats")
+def get_stats():
+    return get_generation_stats()
 
 
 # -------------------------------
@@ -210,9 +326,13 @@ def generate_excel_from_drive(folder_id: str = Form(...)):
         wb.save(stream)
         stream.seek(0)
 
+        # Increment generation stats in MongoDB & local counter
+        stats = increment_generation_stats(len(files))
+
         # Return as StreamingResponse
         headers = {
-            'Content-Disposition': 'attachment; filename="drive_files.xlsx"'
+            'Content-Disposition': 'attachment; filename="drive_files.xlsx"',
+            'X-Total-Generations': str(stats.get("total_generations", 0))
         }
         return StreamingResponse(
             stream,
