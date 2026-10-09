@@ -291,47 +291,75 @@ def get_public_folder_files(folder_id: str) -> list:
 # -------------------------------
 # GENERATE EXCEL FROM GOOGLE DRIVE
 # -------------------------------
+def build_excel(files: list, include_thumbnail: bool) -> io.BytesIO:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Drive Files"
+
+    if include_thumbnail:
+        ws.append(["File Name", "Thumbnail Link", "Open in Google Drive"])
+    else:
+        ws.append(["File Name", "Open in Google Drive"])
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1155CC")
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+
+    for file in files:
+        file_name = file["name"]
+        drive_link = f"https://drive.google.com/file/d/{file['id']}/view"
+        if include_thumbnail:
+            ws.append([
+                file_name,
+                f"https://drive.google.com/thumbnail?id={file['id']}",
+                drive_link,
+            ])
+            ws.cell(ws.max_row, 2).hyperlink = ws.cell(ws.max_row, 2).value
+            ws.cell(ws.max_row, 2).style = "Hyperlink"
+            ws.cell(ws.max_row, 3).hyperlink = drive_link
+            ws.cell(ws.max_row, 3).style = "Hyperlink"
+        else:
+            ws.append([file_name, drive_link])
+            ws.cell(ws.max_row, 2).hyperlink = drive_link
+            ws.cell(ws.max_row, 2).style = "Hyperlink"
+
+    ws.column_dimensions["A"].width = 60
+    ws.column_dimensions["B"].width = 80 if include_thumbnail else 60
+    if include_thumbnail:
+        ws.column_dimensions["C"].width = 60
+
+    stream = io.BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return stream
+
+
 @app.post("/generate-excel")
-def generate_excel_from_drive(folder_id: str = Form(...)):
+def generate_excel_from_drive(
+    folder_id: str = Form(...),
+    excel_type: str = Form("thumbnail"),
+):
     try:
+        if excel_type not in {"thumbnail", "viewable"}:
+            raise HTTPException(status_code=400, detail="Excel type must be 'thumbnail' or 'viewable'.")
+
         folder_id_clean = extract_id(folder_id)
         files = get_public_folder_files(folder_id_clean)
 
         if not files:
             raise HTTPException(status_code=404, detail="No files found. Ensure the folder is not empty and shared as 'Anyone with the link can view'.")
 
-        # Create Excel workbook in memory
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Drive Files"
-
-        # Headers
-        ws.append(["File Name", "File Link"])
-        header_font = Font(bold=True, color="FFFFFF")
-        header_fill = PatternFill("solid", fgColor="1155CC")
-        for cell in ws[1]:
-            cell.font = header_font
-            cell.fill = header_fill
-
-        for f in files:
-            name = f["name"]
-            link = f"https://drive.google.com/thumbnail?id={f['id']}"
-            ws.append([name, link])
-
-        ws.column_dimensions["A"].width = 60
-        ws.column_dimensions["B"].width = 80
-
-        # Save to BytesIO
-        stream = io.BytesIO()
-        wb.save(stream)
-        stream.seek(0)
+        include_thumbnail = excel_type == "thumbnail"
+        stream = build_excel(files, include_thumbnail=include_thumbnail)
 
         # Increment generation stats in MongoDB & local counter
         stats = increment_generation_stats(len(files))
+        filename = f"drive_files_{excel_type}.xlsx"
 
-        # Return as StreamingResponse
         headers = {
-            'Content-Disposition': 'attachment; filename="drive_files.xlsx"',
+            'Content-Disposition': f'attachment; filename="{filename}"',
             'X-Total-Generations': str(stats.get("total_generations", 0))
         }
         return StreamingResponse(
@@ -352,4 +380,3 @@ def generate_excel_from_drive(folder_id: str = Form(...)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
-

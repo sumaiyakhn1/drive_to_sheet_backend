@@ -1,0 +1,291 @@
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 6mm;
+  }
+
+  .cert-container {
+    font-family: 'Times New Roman', Times, serif;
+    color: #000;
+    background-color: #fff;
+    width: 210mm;
+    min-height: 295mm;
+    margin: 0 auto;
+    padding: 8px;
+    box-sizing: border-box;
+  }
+
+  .cert-outer-border {
+    border: 5px double #000;
+    padding: 6px;
+    height: 100%;
+    min-height: calc(295mm - 16px);
+    box-sizing: border-box;
+  }
+
+  .cert-inner-border {
+    border: 1.5px solid #000;
+    padding: 28px 35px;
+    height: 100%;
+    min-height: calc(295mm - 30px);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .cert-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 15px;
+  }
+
+  .cert-logo {
+    width: 125px;
+    height: 125px;
+    object-fit: contain;
+  }
+
+  .cert-college-info {
+    flex: 1;
+    text-align: center;
+    padding-left: 10px;
+  }
+
+  .cert-college-title {
+    font-size: 34px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    margin: 0 0 5px 0;
+    text-transform: uppercase;
+  }
+
+  .cert-college-subtext {
+    font-size: 20px;
+    font-weight: bold;
+    margin: 4px 0;
+  }
+
+  .cert-college-contact {
+    font-size: 17px;
+    font-weight: 500;
+    margin-top: 5px;
+  }
+
+  .cert-title-banner {
+    background-color: #800000;
+    color: #ffffff;
+    text-align: center;
+    font-size: 30px;
+    font-weight: bold;
+    padding: 10px 24px;
+    letter-spacing: 2.5px;
+    margin: 18px 0 28px 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .cert-top-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 22px;
+    margin-bottom: 28px;
+    font-weight: 500;
+  }
+
+  .dotted-input {
+    border: none;
+    border-bottom: 1.5px dotted #000;
+    background: transparent;
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    color: #000;
+    outline: none;
+    padding: 0 4px;
+    text-align: center;
+  }
+
+  .dotted-input-left {
+    text-align: left;
+  }
+
+  .cert-body-paragraph {
+    font-size: 22px;
+    line-height: 2.6;
+    text-align: justify;
+    margin-bottom: 28px;
+  }
+
+  .cert-list-item {
+    display: flex;
+    margin-bottom: 24px;
+    font-size: 21px;
+    line-height: 1.9;
+  }
+
+  .cert-list-label {
+    width: 44%;
+    padding-right: 15px;
+    box-sizing: border-box;
+  }
+
+  .cert-list-value {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .cert-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: 45px;
+    padding-bottom: 12px;
+    font-size: 22px;
+  }
+
+  .cert-principal-sign {
+    text-align: center;
+    font-weight: bold;
+    line-height: 1.5;
+    min-width: 250px;
+  }
+
+  @media print {
+    body {
+      background: #fff;
+      margin: 0;
+      padding: 0;
+    }
+
+    .cert-container {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      box-shadow: none;
+    }
+
+    .cert-title-banner {
+      background-color: #800000 !important;
+      color: #ffffff !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .dotted-input {
+      border-bottom: 1.5px dotted #000 !important;
+    }
+  }
+</style>
+
+<div class="cert-container">
+  <div class="cert-outer-border">
+    <div class="cert-inner-border">
+      <div>
+        <!-- Header Section -->
+        <div class="cert-header">
+          <img class="cert-logo" [src]="displayData.logo || 'https://via.placeholder.com/125'" alt="College Logo" />
+          <div class="cert-college-info">
+            <h1 class="cert-college-title">{{displayData.entityDisplayName || 'RKSD COLLEGE, KAITHAL (HARYANA)'}}</h1>
+            <div class="cert-college-subtext">{{displayData.naacGrade || '("A" Grade, NAAC Accredited)'}}</div>
+            <div class="cert-college-subtext">{{displayData.affiliatedTo || 'Affiliated to Kurukshetra University, Kurukshetra'}}</div>
+            <div class="cert-college-contact">
+              Website: {{displayData.entityWebsite || 'www.rksdcollege.ac.in'}}, Email: {{displayData.entityContactEmail || 'principal@rksdcollege.ac.in'}}
+            </div>
+          </div>
+        </div>
+
+        <!-- Banner Title -->
+        <div class="cert-title-banner">
+          CHARACTER CERTIFICATE
+        </div>
+
+        <!-- Top Fields: Roll No & Session -->
+        <div class="cert-top-row">
+          <div>
+            College Roll No. <input type="text" class="dotted-input" style="width: 220px;" [(ngModel)]="displayData.studentRollNo" />
+          </div>
+          <div>
+            Session <input type="text" class="dotted-input" style="width: 220px;" [(ngModel)]="displayData.session" />
+          </div>
+        </div>
+
+        <!-- Main Body Paragraph -->
+        <div class="cert-body-paragraph">
+          Certified that {{displayData.gender === 'Male' ? 'Mr.' : (displayData.gender === 'Female' ? 'Ms.' : 'Mr./Ms.')}}
+          <input type="text" class="dotted-input" style="width: 340px;" [(ngModel)]="displayData.studentName" />
+          {{displayData.gender === 'Male' ? 'son' : (displayData.gender === 'Female' ? 'daughter' : 'son / daughter')}} of Sh.
+          <input type="text" class="dotted-input" style="width: 360px;" [(ngModel)]="displayData.studentFatherName" /> has been a bonafide
+          student of this college during the period
+          <input type="text" class="dotted-input" style="width: 300px;" [(ngModel)]="displayData.studentPeriod" />
+          {{displayData.gender === 'Female' ? 'She' : (displayData.gender === 'Male' ? 'He' : 'He/She')}} appeared in the
+          <input type="text" class="dotted-input" style="width: 320px;" [(ngModel)]="displayData.examinationName" /> examination
+          of the Kurukshetra University Kurukshetra held in
+          <input type="text" class="dotted-input" style="width: 220px;" [(ngModel)]="displayData.examDate" /> under
+          University Roll No. <input type="text" class="dotted-input" style="width: 200px;" [(ngModel)]="displayData.universityRollNo" /> and has passed obtaining
+          <input type="text" class="dotted-input" style="width: 150px;" [(ngModel)]="displayData.marksObtained" /> SGPA/CGPA out of
+          <input type="text" class="dotted-input" style="width: 150px;" [(ngModel)]="displayData.totalMarks" /> / failed/ placed under compartment in the subject of
+          <input type="text" class="dotted-input" style="width: 280px;" [(ngModel)]="displayData.compartmentSubject" />.
+        </div>
+
+        <!-- List Items 1 to 4 -->
+        <div class="cert-list-item">
+          <div class="cert-list-label">1. Academic distinctions, if any</div>
+          <div class="cert-list-value">
+            <input type="text" class="dotted-input dotted-input-left" style="width: 100%;" [(ngModel)]="displayData.academicDistinctions" />
+            <input type="text" class="dotted-input dotted-input-left" style="width: 100%;" [(ngModel)]="displayData.academicDistinctions2" />
+          </div>
+        </div>
+
+        <div class="cert-list-item">
+          <div class="cert-list-label">2. Co-Curricular activities, if any</div>
+          <div class="cert-list-value">
+            <input type="text" class="dotted-input dotted-input-left" style="width: 100%;" [(ngModel)]="displayData.coCurricularActivities" />
+            <input type="text" class="dotted-input dotted-input-left" style="width: 100%;" [(ngModel)]="displayData.coCurricularActivities2" />
+          </div>
+        </div>
+
+        <div class="cert-list-item">
+          <div class="cert-list-label">
+            3. Brief particulars of disciplinary action taken by College / Department / University (including punishment such as expulsion, warning, fined for violation of College / Department / Hostel rules U.M.C Disqualification etc) if any.
+          </div>
+          <div class="cert-list-value">
+            <input type="text" class="dotted-input dotted-input-left" style="width: 100%;" [(ngModel)]="displayData.disciplinaryAction1" />
+            <input type="text" class="dotted-input dotted-input-left" style="width: 100%;" [(ngModel)]="displayData.disciplinaryAction2" />
+            <input type="text" class="dotted-input dotted-input-left" style="width: 100%;" [(ngModel)]="displayData.disciplinaryAction3" />
+            <input type="text" class="dotted-input dotted-input-left" style="width: 100%;" [(ngModel)]="displayData.disciplinaryAction4" />
+          </div>
+        </div>
+
+        <div class="cert-list-item" style="align-items: center;">
+          <div class="cert-list-label">4. General Conduct during stay in the Institution</div>
+          <div class="cert-list-value" style="flex-direction: row; align-items: center; justify-content: flex-end;">
+            <strong style="font-size: 21px;">
+              <input type="text" class="dotted-input" style="width: 320px; font-weight: bold;" [(ngModel)]="displayData.generalConduct" placeholder="Good / Satisfactory / Unsatisfactory" />
+            </strong>
+          </div>
+        </div>
+
+        <div style="font-size: 17px; font-style: italic; margin-left: 15px; margin-top: 5px;">
+          Strike out which is not applicable
+        </div>
+      </div>
+
+      <!-- Footer Section -->
+      <div class="cert-footer">
+        <div>
+          Dated <input type="text" class="dotted-input" style="width: 220px;" [(ngModel)]="displayData.dateNow" />
+        </div>
+        <div class="cert-principal-sign">
+          <div>Signature of the Principal</div>
+          <div>Seal</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
